@@ -1,0 +1,13 @@
+Specifikace programu: Syntéza zvuku
+
+Mým cílem je vytvořit program, který umožní
+
+- tvořit základní zvukové signály, např. sinusoida, obdélníkový
+průběh či pilovitý průběh.
+- skládat tyto zvuky (souběžně či za sebou) a upravovat je pomocí
+speciálních efektů, např. reverb, filtry, či distorze.
+- přehrát tyto zvuky,
+- výsledek exportovat do zvukového souboru.
+
+Program bude tvořen jako Python knihovna, která bude obsahovat třídy
+a funkce, poskytující výše uvedenou funkcionalitu.

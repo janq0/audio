@@ -229,8 +229,7 @@ seconds.</p></div>
     Then use this function like so:
 
     ```python
-    import wave
-    signal = load(wave.open(&#39;output_file.wav&#39;, &#39;rb&#39;))
+    signal = a.load(a.wave.open(&#39;output_file.wav&#39;, &#39;rb&#39;))
     ```
     &#34;&#34;&#34;
     with file as f:
@@ -256,8 +255,7 @@ the command-line utility <code>ffmpeg</code>:</p>
 <pre><code class="language-sh">ffmpeg -i &lt;input_file&gt; -ac 1 -ar &lt;samprate&gt; output_file.wav
 </code></pre>
 <p>Then use this function like so:</p>
-<pre><code class="language-python">import wave
-signal = load(wave.open('output_file.wav', 'rb'))
+<pre><code class="language-python">signal = a.load(a.wave.open('output_file.wav', 'rb'))
 </code></pre></div>
 </dd>
 <dt id="audio_janq0.rect"><code class="name flex">
@@ -463,15 +461,24 @@ at each frame</p></div>
                 player.stdin.write(struct.pack(&#34;h&#34;, round(fr)))
                 player.stdin.flush()
 
-    def export_wav(self, filename: str = &#34;out.wav&#34;) -&gt; None:
-        &#34;&#34;&#34;Export the peak-normalised signal to a wav file&#34;&#34;&#34;
+    def export(self, file: wave.Wave_write) -&gt; None:
+        &#34;&#34;&#34;Export the peak-normalised signal to the specified wav file
+        object
+    
+        Use this method like this:
+
+        ```python
+        signal.export_wav(a.wave.open(&#39;output_file.wav&#39;, &#39;wb&#39;))
+        ```
+        &#34;&#34;&#34;
+        
         sound = self.normalised() * 32767
-        with wave.open(filename, &#34;wb&#34;) as file:
-            file.setsampwidth(2)
-            file.setnchannels(1)
-            file.setframerate(samprate)
+        with file as f:
+            f.setsampwidth(2)
+            f.setnchannels(1)
+            f.setframerate(samprate)
             for frame in sound.frames:
-                file.writeframes(struct.pack(&#34;h&#34;, round(frame)))
+                f.writeframes(struct.pack(&#34;h&#34;, round(frame)))
 
     def normalised(self) -&gt; FinSignal:
         &#34;&#34;&#34;Peak-normalise the sound to (-1, 1)&#34;&#34;&#34;
@@ -516,25 +523,38 @@ def dur(self):
 </dl>
 <h3>Methods</h3>
 <dl>
-<dt id="audio_janq0.FinSignal.export_wav"><code class="name flex">
-<span>def <span class="ident">export_wav</span></span>(<span>self, filename: str = 'out.wav') ‑> None</span>
+<dt id="audio_janq0.FinSignal.export"><code class="name flex">
+<span>def <span class="ident">export</span></span>(<span>self, file: wave.Wave_write) ‑> None</span>
 </code></dt>
 <dd>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def export_wav(self, filename: str = &#34;out.wav&#34;) -&gt; None:
-    &#34;&#34;&#34;Export the peak-normalised signal to a wav file&#34;&#34;&#34;
+<pre><code class="python">def export(self, file: wave.Wave_write) -&gt; None:
+    &#34;&#34;&#34;Export the peak-normalised signal to the specified wav file
+    object
+
+    Use this method like this:
+
+    ```python
+    signal.export_wav(a.wave.open(&#39;output_file.wav&#39;, &#39;wb&#39;))
+    ```
+    &#34;&#34;&#34;
+    
     sound = self.normalised() * 32767
-    with wave.open(filename, &#34;wb&#34;) as file:
-        file.setsampwidth(2)
-        file.setnchannels(1)
-        file.setframerate(samprate)
+    with file as f:
+        f.setsampwidth(2)
+        f.setnchannels(1)
+        f.setframerate(samprate)
         for frame in sound.frames:
-            file.writeframes(struct.pack(&#34;h&#34;, round(frame)))</code></pre>
+            f.writeframes(struct.pack(&#34;h&#34;, round(frame)))</code></pre>
 </details>
-<div class="desc"><p>Export the peak-normalised signal to a wav file</p></div>
+<div class="desc"><p>Export the peak-normalised signal to the specified wav file
+object</p>
+<p>Use this method like this:</p>
+<pre><code class="language-python">signal.export_wav(a.wave.open('output_file.wav', 'wb'))
+</code></pre></div>
 </dd>
 <dt id="audio_janq0.FinSignal.normalised"><code class="name flex">
 <span>def <span class="ident">normalised</span></span>(<span>self) ‑> <a title="audio_janq0.FinSignal" href="#audio_janq0.FinSignal">FinSignal</a></span>
@@ -1147,7 +1167,7 @@ implementation based on FFT.</p>
 <h4><code><a title="audio_janq0.FinSignal" href="#audio_janq0.FinSignal">FinSignal</a></code></h4>
 <ul class="two-column">
 <li><code><a title="audio_janq0.FinSignal.dur" href="#audio_janq0.FinSignal.dur">dur</a></code></li>
-<li><code><a title="audio_janq0.FinSignal.export_wav" href="#audio_janq0.FinSignal.export_wav">export_wav</a></code></li>
+<li><code><a title="audio_janq0.FinSignal.export" href="#audio_janq0.FinSignal.export">export</a></code></li>
 <li><code><a title="audio_janq0.FinSignal.normalised" href="#audio_janq0.FinSignal.normalised">normalised</a></code></li>
 <li><code><a title="audio_janq0.FinSignal.play" href="#audio_janq0.FinSignal.play">play</a></code></li>
 <li><code><a title="audio_janq0.FinSignal.reverb" href="#audio_janq0.FinSignal.reverb">reverb</a></code></li>

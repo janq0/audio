@@ -13,4 +13,5 @@ To install it, get the `audio_janq0` package with the following command
 pip install git+https://github.com/janq0/audio.git
 ```
 
-
+Next, you can read the [documentation](https://janq0.github.io/audio/audio_janq0.html)
+and see the directory `examples`.

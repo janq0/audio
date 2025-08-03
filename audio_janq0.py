@@ -319,7 +319,7 @@ class FinSignal(Signal):
                 player.stdin.write(struct.pack("h", round(fr)))
                 player.stdin.flush()
 
-    def export_wav(self, file: wave.Wave_write) -> None:
+    def export(self, file: wave.Wave_write) -> None:
         """Export the peak-normalised signal to the specified wav file
         object
     

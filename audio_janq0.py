@@ -83,7 +83,7 @@ You may change this variable at the beginning of your program to trade
 speed for audio quality. The default is `44_100.0`
 """
 
-SignalLike = Union["Signal", Iterable[float], float]
+SignalLike = Union["Signal", "FinSignal", Iterable[float], float]
 """Union of types which are convertible into `Signal`
 
 Many functions in this module accept this type as a parameter instead
@@ -103,7 +103,9 @@ class Signal:
     This type supports all the usual Python arithmetic operations,
     which perform their float equivalents for each frame. For binary
     operations, the resulting signal is only as long as the shortest
-    input signal.
+    input signal. If atleast one input signal is a `FinSignal`,
+    the result will also be a `FinSignal`. One of the the inputs may
+    be a `SignalLike`.
 
     .. note::
        In the context of audio manipulation, we can use instances of this
@@ -134,48 +136,49 @@ class Signal:
             t = type(input).__qualname__
             raise TypeError(f"Cannot create a signal from type {t}")
 
-    def __add__(self, other: SignalLike) -> Self:
+    def __add__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: x + y)
 
-    def __radd__(self, other: SignalLike) -> Self:
+    def __radd__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: y + x)
 
-    def __neg__(self) -> Self:
+    def __neg__(self) -> Signal:
         return self.map(lambda x: -x)
 
-    def __sub__(self, other: SignalLike) -> Self:
+    def __sub__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: x - y)
 
-    def __rsub__(self, other: SignalLike) -> Self:
+    def __rsub__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: y - x)
 
-    def __mul__(self, other: SignalLike) -> Self:
+    def __mul__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: x * y)
 
-    def __rmul__(self, other: SignalLike) -> Self:
+    def __rmul__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: y * x)
 
-    def __truediv__(self, other: SignalLike) -> Self:
+    def __truediv__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: x / y)
 
-    def __rtruediv__(self, other: SignalLike) -> Self:
+    def __rtruediv__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: y / x)
 
-    def __pow__(self, other: SignalLike) -> Self:
+    def __pow__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: x**y)
 
-    def __rpow__(self, other: SignalLike) -> Self:
+    def __rpow__(self, other: SignalLike) -> Signal:
         return self._bin_op(other, lambda x, y: y**x)
 
     def _bin_op(
         self,
         other: SignalLike,
         op: Callable[[float, float], float],
-    ) -> Self:
-        if isinstance(other, FinSignal):
-            self, other = other, self
+    ) -> Signal:
+        
+        is_finite = isinstance(self, FinSignal) or isinstance(other, FinSignal)
+        cls = FinSignal if is_finite else Signal
         z = zip(self.frames, Signal(other).frames)
-        return self.__class__(op(x, y) for x, y in z)
+        return cls(op(x, y) for x, y in z)
 
     def tee(self, n: int = 2) -> list[Self]:
         """Return n independent signals created using self."""
@@ -191,10 +194,6 @@ class Signal:
         continues as a constant zaro signal."""
         return Signal(it.chain(self.frames, it.repeat(0.0)))
 
-    @overload
-    def repeat(self, times: None) -> Signal: ...
-    @overload
-    def repeat(self, times: int) -> Self: ...
     def repeat(self, times: int | None = None) -> Signal:
         """Repeat the signal. If `times` is `None`, repeat infinitely."""
 
@@ -253,11 +252,11 @@ class Signal:
         m = max(self.map(abs).frames)
         return self.map(lambda x: f(x / m))
 
-    def delay(self, period: float, coeff: float) -> Signal:
+    def delay(self, period: float, coeff: float) -> Self:
         """Apply a _delay effect_ scaled by `coeff` to the signal with the
         specified period."""
         shift = round(period * samprate)
-        history = collections.deque()
+        history: collections.deque = collections.deque()
 
         def frames() -> Iterable[float]:
             for x in self.frames:
@@ -279,7 +278,7 @@ class Signal:
            converting the signal to `FinSignal`, which has a faster
            implementation based on FFT.
         """
-        kernel = reversed(imp_res.frames)
+        kernel = list(reversed(imp_res.frames))
         k = len(kernel)
         window = collections.deque([0.0] * k)
 
@@ -307,7 +306,7 @@ class FinSignal(Signal):
         return Signal.__repr__(self)
 
     @property
-    def dur(self):
+    def dur(self) -> float:
         """The duration of the signal"""
         return len(self.frames) / samprate
 
@@ -354,7 +353,7 @@ class FinSignal(Signal):
         mini = min(self.frames)
         amp = (maxi - mini) / 2
         shift = (maxi + mini) / 2
-        return (self - shift) / amp
+        return FinSignal((self - shift) / amp)
 
     def reversed(self) -> FinSignal:
         """Reverse the signal in time"""
@@ -365,7 +364,7 @@ class FinSignal(Signal):
         response"""
         return FinSignal(_convolve(self.frames, imp_resp.frames))
 
-def _convolve(a: list[float], b: list[float]):
+def _convolve(a: list[float], b: list[float]) -> list[float]:
     """Return the convolution of a and b, where the orientation of
     the inputs is opposite. (Reverse one of the inputs to get
     a traditional convolution.)"""
@@ -381,7 +380,7 @@ def _convolve(a: list[float], b: list[float]):
     return _ifft(result_f)[: len(a) + len(b) - 1]
 
 
-def _fft(a: list[float]) -> list[complex]:
+def _fft(a: list[complex]) -> list[complex]:
     """A fast (O(n log n)) algorithm for the discrete fourier transform
     of a, where len(a) is a power of two."""
     return _fft_helper(a, False)
@@ -401,7 +400,7 @@ def _fft_helper(a: list[complex], inverse: bool) -> list[complex]:
     even = _fft_helper(a[::2], inverse)
     odd = _fft_helper(a[1::2], inverse)
     mid = len(a) // 2
-    result = [0] * len(a)
+    result = [0j] * len(a)
     for i in range(mid):
         e = even[i]
         o = cexp((1 if inverse else -1) * 2j * pi * i / len(a)) * odd[i]

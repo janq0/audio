@@ -1,9 +1,57 @@
 """Module for audio synthesis and effects
 
+## Introduction
 
+.. danger::
+   Make sure that before using the library, your volume is at
+   a reasonable level. Playing loud pure tones may cause damage to
+   speakers. (This has happened to me on my laptop speakers 🤦) 
 
-Convention: Standard SI units are used in parameters that represent quantities
-unless specified otherwise
+I created a few code snippets for the reader to get a feel for the library.
+Each of them implicitely has `import audio_janq0 as a`.
+
+```
+mysound = a.sine(800)  # An infinite 800 Hz sine wave
+```
+The type of `mysound` is `Signal`, which is the fundamental class of this
+module. As we can see, its instances can also be infinite, so before
+we play it, we must first convert to a finite signal. This can be done
+with `Signal.over`.
+
+```
+finite = mysound.over(2)  # The first 2 seconds of mysound
+```
+
+.. note::
+   `FinSignal.play` peak-normalizes the sound, so you don't have to
+   worry about the final volume or clipping
+
+```
+finite.play()  # 🎵
+```
+
+We can combine multiple signals using Python's usual arithmetic
+operations.
+
+```
+chord = a.triangle(400) + a.rect(500) + a.sine(600)
+volume = 1 + sine(2)
+mysound = chord * volume
+```
+
+BTW, we can also pass _signals_ to wave-form generating functions (like
+to voltage-controlled oscillators):
+```
+vibrato = a.triangle(600 + 10 * a.sine(5))
+```
+
+To layer/join multiple signals in series, use `compose`.
+
+---
+
+.. note::
+   Standard SI units are used in parameters that represent
+   quantities unless it's specified otherwise.
 """
 
 
@@ -20,35 +68,54 @@ from cmath import exp as cexp
 from subprocess import PIPE, Popen
 from typing import Callable, Union, Self, overload
 
-SAMPRATE = 48_000.0
+samprate = 44_100.0
+"""The global sample rate which is used in the library
+
+You may change this variable at the beginning of your program to trade
+speed for audio quality. The default is `44_100.0`
+"""
 
 SignalLike = Union["Signal", Iterable[float], float]
+"""Union of types which are convertible into `Signal`
+
+Many functions in this module accept this type as a parameter instead
+of only `Signal` to make the interface more comfortable for the user.
+The following shared rules are then used for conversion:
+
+- a _float_ gets converted to an infinite constant signal with
+the corresponding value,
+- an _iterable of floats_ gets converted to a signal with those `Signal.frames`,
+- a _signal_ stays unchanged.
+"""
 
 
 class Signal:
-    """Abstract representation of a signal
+    """The fundamental class of the module for discrete signals
 
-    In general, the `frames` instance variable is an iterator, which
-    allows for signals of infinite length. This is useful if we don't
-    know the length of of the final signal beforehand. See method
-    `over` for the conversion to a finite sound.
+    This type supports all the usual Python arithmetic operations,
+    which perform their float equivalents for each frame. For binary
+    operations, the resulting signal is only as long as the shortest
+    input signal.
 
-    In the context of audio manipulation, we can use instances of this
-    class both as audio signals and control signals e.g. to control
-    volume or pitch.
+    .. note::
+       In the context of audio manipulation, we can use instances of this
+       class both as audio signals and control signals e.g. to control
+       volume or pitch.
     """
 
     frames: Iterable[float]
+    """
+    This can be any iterator of floats,
+    which allows for signals of infinite length. This is useful if we don't
+    know the length of of the final signal beforehand. (See method
+    `Signal.over` for the conversion to a finite sound.) This also means
+    that `frames` might be only be capable iterating only once.
+    (See `Signal.tee` for the cloning of signals.) The values of `frames`
+    are floats without any other limitations.
+    """
 
     def __init__(self, input: SignalLike) -> None:
-        """Create a signal from a SignalLike input
-
-        - if input is a float, a corresponding infinite constant signal
-          gets created
-        - if input is an Iterable[float], a signal with the
-          corresponding frames gets created
-        - if input is a signal, an identical signal gets created
-        """
+        """Create a signal from a SignalLike input"""
         if isinstance(input, Signal):
             self.frames = input.frames
         elif isinstance(input, (int, float)):
@@ -108,12 +175,12 @@ class Signal:
 
     def over(self, dur: float) -> FinSignal:
         """Return the a finite signal consisting of the start of
-        the signal. The duration is specified in seconds."""
-        return FinSignal(it.islice(self.frames, round(dur * SAMPRATE)))
+        the signal over the specified duration."""
+        return FinSignal(it.islice(self.frames, round(dur * samprate)))
 
     def extend(self) -> Signal:
         """Return an infinite signal with begins with self and
-        continues as a const(0)"""
+        continues as a constant zaro signal."""
         return Signal(it.chain(self.frames, it.repeat(0.0)))
 
     @overload
@@ -121,7 +188,7 @@ class Signal:
     @overload
     def repeat(self, times: int) -> Self: ...
     def repeat(self, times: int | None = None) -> Signal:
-        """Repeat the signal. If times is None, repeat infinitely."""
+        """Repeat the signal. If `times` is `None`, repeat infinitely."""
 
         def frames():
             for _ in it.count() if times is None else range(times):
@@ -142,7 +209,7 @@ class Signal:
 
     def lowpasst(self, tau: SignalLike) -> Self:
         """Apply the low-pass filter with a specified time constant"""
-        a = 1 / (SAMPRATE * Signal(tau) + 1)
+        a = 1 / (samprate * Signal(tau) + 1)
 
         def frames() -> Iterable[float]:
             y_fr = 0.0
@@ -161,7 +228,7 @@ class Signal:
 
     def highpass(self, cutoff: SignalLike) -> Self:
         """Apply the high-pass filter with a specified cutoff frequency"""
-        a = 1 / ((2 * pi / SAMPRATE) * Signal(cutoff) + 1)
+        a = 1 / ((2 * pi / samprate) * Signal(cutoff) + 1)
 
         def frames() -> Iterable[float]:
             y_fr = prev_x_fr = 0.0
@@ -178,10 +245,10 @@ class Signal:
         m = max(self.map(abs).frames)
         return self.map(lambda x: f(x / m))
 
-    def delay(self, period, coeff) -> Signal:
-        """Apply a delay scaled by coeff to the signal with the
+    def delay(self, period: float, coeff: float) -> Signal:
+        """Apply a _delay effect_ scaled by `coeff` to the signal with the
         specified period."""
-        shift = round(period * SAMPRATE)
+        shift = round(period * samprate)
         history = collections.deque()
 
         def frames() -> Iterable[float]:
@@ -196,15 +263,23 @@ class Signal:
         """Apply func to each frame of the signal"""
         return self.__class__(map(func, self.frames))
 
-    def convolve(self, kernel: FinSignal) -> Self:
-        k = len(kernel.frames)
+    def reverb(self, imp_res: FinSignal) -> Self:
+        """Apply a convolution reverb with a given impulse response
+
+        .. note::
+           This method on the `Signal` class may be slow. Consider first
+           converting the signal to `FinSignal`, which has a faster
+           implementation based on FFT.
+        """
+        kernel = reversed(imp_res.frames)
+        k = len(kernel)
         window = collections.deque([0.0] * k)
 
         def frames() -> Iterable[float]:
-            for x in it.chain(self.frames, [0.0] * (k - 1)):
+            for x in it.chain(kernel, [0.0] * (k - 1)):
                 window.popleft()
                 window.append(x)
-                yield sum(a * b for a, b in zip(window, kernel.frames))
+                yield sum(a * b for a, b in zip(window, kernel))
 
         return self.__class__(frames())
 
@@ -213,6 +288,8 @@ class FinSignal(Signal):
     """A subclass of Signal for Finite signals"""
 
     frames: list[float]
+    """Unlike `Signal`, `FinSignal.frames` is a list, so we can iterate
+    over it howmany times we want."""
 
     def __init__(self, input: SignalLike) -> None:
         self.frames = list(Signal(input).frames)
@@ -224,12 +301,17 @@ class FinSignal(Signal):
     @property
     def dur(self):
         """The duration of the signal"""
-        return len(self.frames) / SAMPRATE
+        return len(self.frames) / samprate
 
     def play(self) -> None:
-        """Play the peak-normalised signal"""
+        """Play the peak-normalised signal
+
+        .. note::
+           This method relies on the `aplay` command-line utility, so it
+           won't work unless you have `aplay` installed.
+        """
         sound = self.normalised() * 32767
-        cmd = ["aplay", "-f", "S16_LE", "-r", str(round(SAMPRATE))]
+        cmd = ["aplay", "-f", "S16_LE", "-r", str(round(samprate))]
         with Popen(cmd, stdin=PIPE) as player:
             if player.stdin is None:
                 raise ValueError
@@ -243,7 +325,7 @@ class FinSignal(Signal):
         with wave.open(filename, "wb") as file:
             file.setsampwidth(2)
             file.setnchannels(1)
-            file.setframerate(SAMPRATE)
+            file.setframerate(samprate)
             for frame in sound.frames:
                 file.writeframes(struct.pack("h", round(frame)))
 
@@ -258,9 +340,12 @@ class FinSignal(Signal):
         return (self - shift) / amp
 
     def reversed(self) -> FinSignal:
+        """Reverse the signal in time"""
         return FinSignal(reversed(self.frames))
 
     def reverb(self, imp_resp: FinSignal) -> FinSignal:
+        """Apply a convolution reverb with the specified impulse
+        response"""
         return FinSignal(_convolve(self.frames, imp_resp.frames))
 
 def _convolve(a: list[float], b: list[float]):
@@ -296,8 +381,8 @@ def _fft_helper(a: list[complex], inverse: bool) -> list[complex]:
         return a
     if len(a) % 2 != 0:
         raise ValueError("Input length isn't a power of two")
-    even = _fft(a[::2], inverse)
-    odd = _fft(a[1::2], inverse)
+    even = _fft_helper(a[::2], inverse)
+    odd = _fft_helper(a[1::2], inverse)
     mid = len(a) // 2
     result = [0] * len(a)
     for i in range(mid):
@@ -308,16 +393,28 @@ def _fft_helper(a: list[complex], inverse: bool) -> list[complex]:
     return result
 
 
-def load(filename: str) -> FinSignal:
+def load(file: wave.Wave_read) -> FinSignal:
     """Load a signal from a wave file with the correct parameters.
 
     To convert a general audio file to the desired format, one can use
-    ffmpeg -i input_file -ac 1 -ar SAMPRATE output_file.wav"""
-    with wave.open(filename, "rb") as f:
+    the command-line utility `ffmpeg`:
+
+    ```sh
+    ffmpeg -i <input_file> -ac 1 -ar <samprate> output_file.wav
+    ```
+
+    Then use this function like so:
+
+    ```python
+    import wave
+    signal = load(wave.open('output_file.wav', 'rb'))
+    ```
+    """
+    with file as f:
         if (
             f.getnchannels() == 1
             and f.getsampwidth() == 2
-            and f.getframerate() == SAMPRATE
+            and f.getframerate() == samprate
             and f.getcomptype() == "NONE"
         ):
             n = f.getnframes()
@@ -326,40 +423,41 @@ def load(filename: str) -> FinSignal:
         else:
             print(f.getparams())
             raise ValueError(
-                f"{filename} must have 1 channel, 2 byte samples,"
-                f"sample rate of {SAMPRATE} and no compression."
+                f"file must have 1 channel, 2 byte samples,"
+                f"sample rate of {samprate} and no compression."
             )
 
 
 def white() -> Signal:
-    """Returns white noise"""
+    """White noise generated by random numbers from the range (-1, 1)
+    at each frame"""
     return Signal(random.uniform(-1.0, 1.0) for _ in it.repeat(None))
 
 
 def saw(freq: SignalLike) -> Signal:
-    """Returns the signal of a sawtooth wave form with peaks at 1 and -1"""
+    """A sawtooth wave-form with peaks at 1 and -1"""
 
     def frames():
         out = 0
         for f in Signal(freq).frames:
             yield out
-            step = f / SAMPRATE
+            step = f / samprate
             if out + step >= 1:
                 out = -2 + out + step
-            out += f / SAMPRATE
+            out += f / samprate
 
     return Signal(frames())
 
 
 def triangle(freq: SignalLike) -> Signal:
-    """Returns the signal of a triangle wave form with peaks at 1 and -1"""
+    """A triangle wave form with peaks at 1 and -1"""
 
     def frames():
         out = 0
         d = 1
         for f in Signal(freq).frames:
             yield out
-            step = 2 * f / SAMPRATE
+            step = 2 * f / samprate
             if d == 1 and out + step >= 1:
                 out = 2 - out - step
                 d = -d
@@ -373,49 +471,49 @@ def triangle(freq: SignalLike) -> Signal:
 
 
 def step() -> Signal:
-    """Returns the signal of a unit step function"""
+    """The signal of a unit step function"""
     return Signal(it.chain([0.0], it.repeat(1.0)))
 
 
 def stepdown() -> Signal:
-    """Returns the signal of a unit step down function (starting at 1
+    """The signal of a unit step down function (starting at 1
     and immediately going to 0)"""
     return Signal(it.chain([1.0], it.repeat(0.0)))
 
 
 def decay(tau: SignalLike) -> Signal:
-    """Return an exponential decay signal starting at 1 and approaching
+    """An exponential decay signal starting at 1 and approaching
     0 with time constant tau."""
     return stepdown().lowpasst(tau)
 
 
 def rise(tau: SignalLike) -> Signal:
-    """Return an exponential rise signal starting at 0 and approaching
+    """An exponential rise signal starting at 0 and approaching
     1 with time constant tau."""
     return step().lowpasst(tau)
 
 
 def linear() -> Signal:
-    """Return a linear signal starting at 0 with a unit slope in
+    """A linear signal starting at 0 with a unit slope in
     seconds."""
-    return Signal(it.count(step=1 / SAMPRATE))
+    return Signal(it.count(step=1 / samprate))
 
 
 def exp() -> Signal:
-    """Return an exponential signal starting at one and doubling every
+    """An exponential signal starting at one and doubling every
     second"""
     return 2 ** linear()
 
 
 def sine(freq: SignalLike) -> Signal:
-    """Return a unit sine signal with the specified frequency"""
+    """A unit sine signal with the specified frequency signal input"""
     freq = Signal(freq)
 
     def frames() -> Iterable[float]:
         x, y = 1.0, 0.0
         for f in freq.frames:
             yield y
-            d = 2 * pi * f / SAMPRATE
+            d = 2 * pi * f / samprate
             # Apply the rotation matrix
             x, y = x * cos(d) - y * sin(d), x * sin(d) + y * cos(d)
 
@@ -423,20 +521,24 @@ def sine(freq: SignalLike) -> Signal:
 
 
 def rect(freq: SignalLike) -> Signal:
-    """Returns the signal of a rectangular wave form with peaks at 1 and -1"""
+    """The signal of a rectangular wave form with peaks at 1 and -1"""
     return sine(freq).map(lambda x: 1 if x >= 0 else -1)
 
 
 def compose(*table: tuple[SignalLike, float] | FinSignal) -> FinSignal:
     """Compose multiple signals in series
 
-    Each argument can either be a (signal, duration) tuple or a finite,
-    finite whose duration is determined directly. The first type of
-    argument allows overlapping signals (if duration is less than the
-    duration of the signal)"""
+    Each argument can either be a
+
+    - (`Signal`, `float`) tuple: which starts playing signal and waits before playing
+    the next signal in sequence for a duration specified by the float value.
+    This allows for overlapping signals
+    - `FinSignal` which corresponds to (`FinSignal`, `FinSignal.dur`) of
+    the previous point.
+    """
     tot_frames = round(
         sum(
-            len(item.frames) if isinstance(item, FinSignal) else item[1] * SAMPRATE
+            len(item.frames) if isinstance(item, FinSignal) else item[1] * samprate
             for item in table
         )
     )
@@ -445,7 +547,7 @@ def compose(*table: tuple[SignalLike, float] | FinSignal) -> FinSignal:
     for item in table:
         if isinstance(item, tuple):
             sig, dur = item
-            dur_frames = round(dur * SAMPRATE)
+            dur_frames = round(dur * samprate)
             sig = Signal(sig).extend()
         elif isinstance(item, FinSignal):
             sig = item

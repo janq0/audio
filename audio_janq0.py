@@ -319,15 +319,24 @@ class FinSignal(Signal):
                 player.stdin.write(struct.pack("h", round(fr)))
                 player.stdin.flush()
 
-    def export_wav(self, filename: str = "out.wav") -> None:
-        """Export the peak-normalised signal to a wav file"""
+    def export_wav(self, file: wave.Wave_write) -> None:
+        """Export the peak-normalised signal to the specified wav file
+        object
+    
+        Use this method like this:
+
+        ```python
+        signal.export_wav(a.wave.open('output_file.wav', 'wb'))
+        ```
+        """
+        
         sound = self.normalised() * 32767
-        with wave.open(filename, "wb") as file:
-            file.setsampwidth(2)
-            file.setnchannels(1)
-            file.setframerate(samprate)
+        with file as f:
+            f.setsampwidth(2)
+            f.setnchannels(1)
+            f.setframerate(samprate)
             for frame in sound.frames:
-                file.writeframes(struct.pack("h", round(frame)))
+                f.writeframes(struct.pack("h", round(frame)))
 
     def normalised(self) -> FinSignal:
         """Peak-normalise the sound to (-1, 1)"""
@@ -406,8 +415,7 @@ def load(file: wave.Wave_read) -> FinSignal:
     Then use this function like so:
 
     ```python
-    import wave
-    signal = load(wave.open('output_file.wav', 'rb'))
+    signal = a.load(a.wave.open('output_file.wav', 'rb'))
     ```
     """
     with file as f:

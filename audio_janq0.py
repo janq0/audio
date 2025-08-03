@@ -5,7 +5,7 @@
 .. danger::
    Make sure that before using the library, your volume is at
    a reasonable level. Playing loud pure tones may cause damage to
-   speakers. (This has happened to me on my laptop speakers 🤦) 
+   speakers. (This has happened to me on my laptop speakers 🤦)
 
 I created a few code snippets for the reader to get a feel for the library.
 Each of them implicitely has `import audio_janq0 as a`.
@@ -62,7 +62,6 @@ To layer/join multiple signals in series, use `compose`.
    quantities unless it's specified otherwise.
 """
 
-
 from __future__ import annotations
 
 import random
@@ -74,7 +73,7 @@ import itertools as it
 from math import cos, pi, sin, log, ceil
 from cmath import exp as cexp
 from subprocess import PIPE, Popen
-from typing import Callable, Union, Self, overload
+from typing import Callable, Union, Self
 
 samprate = 44_100.0
 """The global sample rate which is used in the library
@@ -83,7 +82,7 @@ You may change this variable at the beginning of your program to trade
 speed for audio quality. The default is `44_100.0`
 """
 
-SignalLike = Union["Signal", "FinSignal", Iterable[float], float]
+SignalLike = Union["Signal", Iterable[float], float]
 """Union of types which are convertible into `Signal`
 
 Many functions in this module accept this type as a parameter instead
@@ -174,7 +173,6 @@ class Signal:
         other: SignalLike,
         op: Callable[[float, float], float],
     ) -> Signal:
-        
         is_finite = isinstance(self, FinSignal) or isinstance(other, FinSignal)
         cls = FinSignal if is_finite else Signal
         z = zip(self.frames, Signal(other).frames)
@@ -278,6 +276,8 @@ class Signal:
            converting the signal to `FinSignal`, which has a faster
            implementation based on FFT.
         """
+        # Reverb by doing the convolution of the signal
+        # with the reverse of the impulse response
         kernel = list(reversed(imp_res.frames))
         k = len(kernel)
         window = collections.deque([0.0] * k)
@@ -317,7 +317,7 @@ class FinSignal(Signal):
            This method relies on the `aplay` command-line utility, so it
            won't work unless you have `aplay` installed.
         """
-        sound = self.normalised() * 32767
+        sound = self.normalised() * 32767  # The range of S16_LE
         cmd = ["aplay", "-f", "S16_LE", "-r", str(round(samprate))]
         with Popen(cmd, stdin=PIPE) as player:
             if player.stdin is None:
@@ -329,15 +329,15 @@ class FinSignal(Signal):
     def export(self, file: wave.Wave_write) -> None:
         """Export the peak-normalised signal to the specified wav file
         object
-    
+
         Use this method like this:
 
         ```python
         signal.export_wav(a.wave.open('output_file.wav', 'wb'))
         ```
         """
-        
-        sound = self.normalised() * 32767
+
+        sound = self.normalised() * 32767  # The range of 2 byte sampwidth
         with file as f:
             f.setsampwidth(2)
             f.setnchannels(1)
@@ -362,9 +362,10 @@ class FinSignal(Signal):
     def reverb(self, imp_resp: FinSignal) -> FinSignal:
         """Apply a convolution reverb with the specified impulse
         response"""
-        return FinSignal(_convolve(self.frames, imp_resp.frames))
+        return FinSignal(_convolve_r(self.frames, imp_resp.frames))
 
-def _convolve(a: list[float], b: list[float]) -> list[float]:
+
+def _convolve_r(a: list[float], b: list[float]) -> list[float]:
     """Return the convolution of a and b, where the orientation of
     the inputs is opposite. (Reverse one of the inputs to get
     a traditional convolution.)"""
@@ -393,6 +394,8 @@ def _ifft(a: list[complex]) -> list[float]:
 
 
 def _fft_helper(a: list[complex], inverse: bool) -> list[complex]:
+    # A radix-2 DIT implementation
+    # https://en.wikipedia.org/wiki/Cooley%E2%80%93Tukey_FFT_algorithm#The_radix-2_DIT_case
     if len(a) == 1:
         return a
     if len(a) % 2 != 0:

@@ -47,6 +47,14 @@ vibrato = a.triangle(600 + 10 * a.sine(5))
 
 To layer/join multiple signals in series, use `compose`.
 
+## Categories
+
+- Wave-form signal generators: `rect`, `saw`, `sine`, `triangle`, `white`
+- Auxiliary signal generators: `linear`, `exp`, `decay`, `rise`, `step`,
+`stepdown`
+- Effects: `Signal.delay`, `Signal.distort`, `Signal.highpass`,
+`Signal.highpasst`, `Signal.lowpass`, `Signal.lowpasst`, `Signal.reverb`
+
 ---
 
 .. note::
